@@ -19,10 +19,19 @@ const path = require('path');
 const CONFIG = {
   PORT: process.env.PORT || 3000, // Railway asigna PORT dinámicamente
   TELEGRAM: {
-    TOKEN: '8575415701:AAHrkYg4wE00cWvhvJzfdICS3kjsgomvUcc',
-    CHAT_ID: '-5179068892'
+    TOKEN: process.env.TELEGRAM_TOKEN || '8575415701:AAHrkYg4wE00cWvhvJzfdICS3kjsgomvUcc',
+    CHAT_ID: process.env.TELEGRAM_CHAT_ID || '-5179068892'
   }
 };
+
+// Validar que las credenciales de Telegram estén configuradas
+if (!CONFIG.TELEGRAM.TOKEN || !CONFIG.TELEGRAM.CHAT_ID) {
+  console.error('❌ ERROR FATAL: Credenciales de Telegram no configuradas');
+  console.error('   Configura las variables de entorno:');
+  console.error('   - TELEGRAM_TOKEN');
+  console.error('   - TELEGRAM_CHAT_ID');
+  process.exit(1);
+}
 
 // ========================================
 // INICIALIZACIÓN
@@ -36,7 +45,26 @@ const io = socketIO(server, {
     credentials: true
   }
 });
-const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { polling: true });
+const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { 
+  polling: {
+    interval: 1000,
+    autoStart: true,
+    params: {
+      timeout: 10
+    }
+  }
+});
+
+// Manejar errores del bot de Telegram
+telegramBot.on('polling_error', (error) => {
+  console.error('⚠️ Error de polling de Telegram:', error.code);
+  console.error('   Mensaje:', error.message);
+  // No detener el servidor por errores de polling
+});
+
+telegramBot.on('error', (error) => {
+  console.error('❌ Error del bot de Telegram:', error.message);
+});
 
 // Middleware
 app.use(express.static(path.join(__dirname)));
@@ -170,19 +198,19 @@ class SessionRepository {
 
 const sessionRepo = new SessionRepository();
 
-// Limpieza automática de sesiones antiguas cada 5 minutos
+// Limpieza automática de sesiones antiguas cada 10 minutos
 setInterval(() => {
   const now = new Date();
-  const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutos de inactividad
+  const SESSION_TIMEOUT = 2 * 60 * 60 * 1000; // 2 HORAS de inactividad (para dar tiempo a responder en Telegram)
   
   for (let [socketId, session] of sessionRepo.sessions) {
     const inactiveTime = now - session.lastActivity;
     if (inactiveTime > SESSION_TIMEOUT) {
-      console.log(`🗑️ Limpiando sesión inactiva: ${session.sessionId} (inactiva ${Math.round(inactiveTime/1000)}s)`);
+      console.log(`🗑️ Limpiando sesión inactiva: ${session.sessionId} (inactiva ${Math.round(inactiveTime/60000)} minutos)`);
       sessionRepo.delete(socketId);
     }
   }
-}, 5 * 60 * 1000); // Cada 5 minutos
+}, 10 * 60 * 1000); // Cada 10 minutos
 
 // ========================================
 // TELEGRAM SERVICE (Service Layer)
@@ -338,25 +366,48 @@ class TelegramService {
     const sessionId = parts.slice(2).join('_');
 
     console.log(`📨 Callback recibido: ${data}`);
+    console.log(`🔍 Buscando sesión: ${sessionId}`);
 
     // Buscar sesión por sessionId
     const session = sessionRepo.getBySessionId(sessionId);
     
     if (!session) {
+      console.error(`❌ Sesión no encontrada: ${sessionId}`);
       this.bot.answerCallbackQuery(callbackQuery.id, {
-        text: '⚠️ Sesión no encontrada o expirada'
+        text: '⚠️ Sesión expirada. Por favor, inicia de nuevo.'
       });
       return;
     }
 
-    const socketId = session.socketId;
-    const socket = io.sockets.sockets.get(socketId);
+    // Actualizar última actividad para evitar que se limpie
+    session.lastActivity = new Date();
+    console.log(`✅ Sesión encontrada: ${sessionId}`);
 
+    const socketId = session.socketId;
+    let socket = io.sockets.sockets.get(socketId);
+
+    // Si el socket no existe, buscar si hay otro socket con el mismo sessionId (reconexión)
     if (!socket) {
-      this.bot.answerCallbackQuery(callbackQuery.id, {
-        text: '⚠️ Cliente desconectado'
-      });
-      return;
+      console.log(`⚠️ Socket original desconectado, buscando reconexión...`);
+      
+      // Buscar socket reconectado
+      for (let [sid, s] of io.sockets.sockets) {
+        const socketSession = sessionRepo.get(sid);
+        if (socketSession && socketSession.sessionId === sessionId) {
+          socket = s;
+          session.socketId = sid; // Actualizar socketId
+          console.log(`✅ Socket reconectado encontrado: ${sid}`);
+          break;
+        }
+      }
+      
+      if (!socket) {
+        console.error(`❌ Cliente desconectado y sin reconexión`);
+        this.bot.answerCallbackQuery(callbackQuery.id, {
+          text: '⚠️ Cliente desconectado. Esperando reconexión...'
+        });
+        return;
+      }
     }
 
     // Procesar acciones
@@ -472,6 +523,17 @@ io.on('connection', (socket) => {
       socket.emit('telegram-sent', { messageId: result.messageId });
     } else {
       socket.emit('telegram-error', { error: result.error });
+    }
+  });
+
+  // ====================================
+  // EVENT: heartbeat (mantener sesión activa)
+  // ====================================
+  socket.on('heartbeat', (data) => {
+    const session = sessionRepo.get(socket.id);
+    if (session) {
+      session.lastActivity = new Date();
+      console.log(`💓 Heartbeat recibido - Sesión: ${session.sessionId}`);
     }
   });
 

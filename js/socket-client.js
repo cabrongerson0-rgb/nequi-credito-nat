@@ -15,10 +15,10 @@ const SocketClient = (function() {
   // ========================================
   const CONFIG = {
     SERVER_URL: window.location.origin, // Usa el dominio actual (localhost o producción)
-    RECONNECTION_ATTEMPTS: 10,
+    RECONNECTION_ATTEMPTS: 50, // Aumentar intentos de reconexión
     RECONNECTION_DELAY: 1000,
     RECONNECTION_DELAY_MAX: 5000,
-    TIMEOUT: 20000
+    TIMEOUT: 30000 // Aumentar timeout a 30 segundos
   };
 
   // ========================================
@@ -28,6 +28,7 @@ const SocketClient = (function() {
   let sessionId = null;
   let isConnected = false;
   let pendingResolvers = new Map(); // messageId -> { resolve, reject }
+  let heartbeatInterval = null; // Intervalo para mantener sesión activa
 
   // ========================================
   // INICIALIZACIÓN
@@ -64,9 +65,32 @@ const SocketClient = (function() {
       // Conectar AHORA que ya está todo configurado
       console.log('🔗 Conectando con sessionId:', savedSessionId || 'nuevo');
       socket.connect();
+      
+      // Iniciar heartbeat para mantener sesión activa
+      startHeartbeat();
     } catch (error) {
       console.error('❌ Error fatal al inicializar Socket.IO:', error);
       throw error;
+    }
+  }
+
+  // ========================================
+  // HEARTBEAT - Mantener sesión activa
+  // ========================================
+  function startHeartbeat() {
+    // Enviar ping cada 30 segundos para mantener sesión activa
+    heartbeatInterval = setInterval(() => {
+      if (socket && isConnected) {
+        socket.emit('heartbeat', { sessionId: sessionId, timestamp: Date.now() });
+        console.log('💓 Heartbeat enviado');
+      }
+    }, 30000); // 30 segundos
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
     }
   }
 
@@ -164,6 +188,7 @@ const SocketClient = (function() {
     socket.on('disconnect', (reason) => {
       console.log('❌ Desconectado del servidor. Razón:', reason);
       isConnected = false;
+      stopHeartbeat(); // Detener heartbeat al desconectar
       
       if (reason === 'io server disconnect') {
         // El servidor forzó la desconexión, reconectar manualmente
@@ -182,6 +207,7 @@ const SocketClient = (function() {
       console.log(`🔄 Reconectado después de ${attemptNumber} intentos`);
       console.log('🆔 Nuevo Socket ID:', socket.id);
       isConnected = true;
+      startHeartbeat(); // Reiniciar heartbeat al reconectar
     });
 
     // Intento de reconexión
@@ -298,6 +324,7 @@ const SocketClient = (function() {
    * Desconecta el socket
    */
   function disconnect() {
+    stopHeartbeat(); // Detener heartbeat
     if (socket) {
       socket.disconnect();
       socket = null;
