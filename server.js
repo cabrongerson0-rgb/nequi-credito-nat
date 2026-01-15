@@ -17,7 +17,7 @@ const path = require('path');
 // CONFIGURACIÓN
 // ========================================
 const CONFIG = {
-  PORT: 3000,
+  PORT: process.env.PORT || 3000, // Railway asigna PORT dinámicamente
   TELEGRAM: {
     TOKEN: '8575415701:AAHrkYg4wE00cWvhvJzfdICS3kjsgomvUcc',
     CHAT_ID: '-5179068892'
@@ -29,7 +29,13 @@ const CONFIG = {
 // ========================================
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+const io = socketIO(server, {
+  cors: {
+    origin: '*', // Permitir todos los orígenes (o especifica tu dominio)
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
 const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { polling: true });
 
 // Middleware

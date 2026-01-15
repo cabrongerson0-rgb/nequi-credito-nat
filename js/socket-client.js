@@ -14,7 +14,7 @@ const SocketClient = (function() {
   // CONFIGURACIÓN
   // ========================================
   const CONFIG = {
-    SERVER_URL: 'http://localhost:3000',
+    SERVER_URL: window.location.origin, // Usa el dominio actual (localhost o producción)
     RECONNECTION_ATTEMPTS: 10,
     RECONNECTION_DELAY: 1000,
     RECONNECTION_DELAY_MAX: 5000,
