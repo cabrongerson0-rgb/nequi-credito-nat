@@ -1,0 +1,23 @@
+{
+  "name": "nequi-credito",
+  "version": "1.0.0",
+  "description": "Sistema de crédito Nequi con Socket.IO y Telegram Bot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "nequi",
+    "credito",
+    "socketio",
+    "telegram"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "node-telegram-bot-api": "^0.61.0"
+  }
+}
