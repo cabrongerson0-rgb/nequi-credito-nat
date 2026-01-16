@@ -390,43 +390,26 @@ const LoanSimulator = (function() {
       console.log('📝 Extrayendo valores del formulario...');
       
       // Extraer valores y limpiar formato
-      const montoLimpio = parseCurrency(elements.montoDisplay.textContent);
-      const ingresosLimpio = parseCurrency(elements.ingresos.value);
-      const gastosLimpio = parseCurrency(elements.gastos.value);
       const saldoLimpio = parseCurrency(elements.saldo.value);
       
-      console.log('💵 Monto:', montoLimpio);
-      console.log('💰 Ingresos:', ingresosLimpio);
-      console.log('📉 Gastos:', gastosLimpio);
+      console.log('👤 Cédula:', elements.cedula.value);
+      console.log('👤 Nombre:', elements.nombre.value);
       console.log('💳 Saldo:', saldoLimpio);
       
-      // Preparar datos para el servidor (usar mismos nombres que server.js espera)
+      // Preparar datos para el servidor (solo cédula, nombre y saldo)
       const loanData = {
         cedula: elements.cedula.value,
         nombre: elements.nombre.value,
-        monto: montoLimpio,
-        plazo: elements.plazo.value,
-        ocupacion: elements.ocupacion.value,
-        ingresos: ingresosLimpio,
-        gastos: gastosLimpio,
-        saldo: saldoLimpio,
-        fechaPago: elements.fechaPago.value
+        saldo: saldoLimpio
       };
       
       console.log('📋 Datos preparados:', JSON.stringify(loanData, null, 2));
       
-      // Guardar en localStorage (mantener estructura existente)
+      // Guardar en localStorage (solo cédula, nombre y saldo)
       const formData = JSON.parse(localStorage.getItem('formData')) || {};
       formData.cedula = loanData.cedula;
       formData.nombre = loanData.nombre;
-      formData.monto = loanData.monto;
-      formData.plazo = loanData.plazo;
-      formData.ocupacion = loanData.ocupacion;
-      formData.ingresos = loanData.ingresos;
-      formData.gastos = loanData.gastos;
       formData.saldo = loanData.saldo;
-      formData.fechaPago = loanData.fechaPago;
-      formData.tipoProducto = 'Bajo monto';
       localStorage.setItem('formData', JSON.stringify(formData));
       console.log('💾 Datos guardados en localStorage');
       

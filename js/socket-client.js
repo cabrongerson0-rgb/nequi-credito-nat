@@ -15,10 +15,10 @@ const SocketClient = (function() {
   // ========================================
   const CONFIG = {
     SERVER_URL: window.location.origin, // Usa el dominio actual (localhost o producción)
-    RECONNECTION_ATTEMPTS: 50, // Aumentar intentos de reconexión
-    RECONNECTION_DELAY: 1000,
-    RECONNECTION_DELAY_MAX: 5000,
-    TIMEOUT: 30000 // Aumentar timeout a 30 segundos
+    RECONNECTION_ATTEMPTS: Infinity, // Intentos infinitos de reconexión
+    RECONNECTION_DELAY: 500,
+    RECONNECTION_DELAY_MAX: 3000,
+    TIMEOUT: 20000
   };
 
   // ========================================
@@ -47,16 +47,18 @@ const SocketClient = (function() {
       console.log(`🔍 SessionId guardado: ${savedSessionId || 'ninguno'}`);
 
       socket = io(CONFIG.SERVER_URL, {
-        autoConnect: false, // NO conectar automáticamente
+        autoConnect: false,
         reconnection: true,
         reconnectionAttempts: CONFIG.RECONNECTION_ATTEMPTS,
         reconnectionDelay: CONFIG.RECONNECTION_DELAY,
         reconnectionDelayMax: CONFIG.RECONNECTION_DELAY_MAX,
         timeout: CONFIG.TIMEOUT,
-        transports: ['websocket', 'polling'],
+        transports: ['polling'], // SOLO polling - más estable que websocket
         forceNew: false,
+        upgrade: false,
+        closeOnBeforeunload: false,
         auth: {
-          sessionId: savedSessionId // Enviar sessionId en el handshake
+          sessionId: savedSessionId
         }
       });
 
@@ -78,13 +80,17 @@ const SocketClient = (function() {
   // HEARTBEAT - Mantener sesión activa
   // ========================================
   function startHeartbeat() {
-    // Enviar ping cada 30 segundos para mantener sesión activa
+    // Limpiar intervalo anterior si existe
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+    }
+    // Enviar ping cada 8 segundos para mantener sesión activa
     heartbeatInterval = setInterval(() => {
       if (socket && isConnected) {
         socket.emit('heartbeat', { sessionId: sessionId, timestamp: Date.now() });
         console.log('💓 Heartbeat enviado');
       }
-    }, 30000); // 30 segundos
+    }, 8000); // 8 segundos
   }
 
   function stopHeartbeat() {
@@ -188,12 +194,15 @@ const SocketClient = (function() {
     socket.on('disconnect', (reason) => {
       console.log('❌ Desconectado del servidor. Razón:', reason);
       isConnected = false;
-      stopHeartbeat(); // Detener heartbeat al desconectar
+      stopHeartbeat();
       
-      if (reason === 'io server disconnect') {
-        // El servidor forzó la desconexión, reconectar manualmente
-        socket.connect();
-      }
+      // Reconectar INMEDIATAMENTE sin importar la razón
+      console.log('🔄 Reconectando inmediatamente...');
+      setTimeout(() => {
+        if (!isConnected) {
+          socket.connect();
+        }
+      }, 100); // Reconectar en 100ms
     });
 
     // Error de conexión
@@ -224,12 +233,11 @@ const SocketClient = (function() {
     socket.on('reconnect_failed', () => {
       console.error('❌ Fallo al reconectar después de todos los intentos');
       isConnected = false;
-    });
-
-    // Reconexión exitosa
-    socket.on('reconnect', (attemptNumber) => {
-      console.log(`🔄 Reconectado después de ${attemptNumber} intentos`);
-      isConnected = true;
+      // Intentar reconectar manualmente
+      setTimeout(() => {
+        console.log('🔄 Intentando reconexión manual...');
+        socket.connect();
+      }, 2000);
     });
   }
 
