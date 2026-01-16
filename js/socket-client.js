@@ -84,13 +84,13 @@ const SocketClient = (function() {
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval);
     }
-    // Enviar ping cada 8 segundos para mantener sesión activa
+    // Enviar ping cada 5 segundos para mantener sesión activa
     heartbeatInterval = setInterval(() => {
       if (socket && isConnected) {
         socket.emit('heartbeat', { sessionId: sessionId, timestamp: Date.now() });
         console.log('💓 Heartbeat enviado');
       }
-    }, 8000); // 8 segundos
+    }, 5000); // 5 segundos
   }
 
   function stopHeartbeat() {

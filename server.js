@@ -44,16 +44,17 @@ const io = socketIO(server, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  pingInterval: 5000, // Ping cada 5 segundos (muy frecuente)
-  pingTimeout: 10000, // Esperar 10 segundos antes de timeout
+  pingInterval: 3000, // Ping cada 3 segundos (muy frecuente)
+  pingTimeout: 8000, // Esperar 8 segundos antes de timeout
   upgradeTimeout: 5000,
   maxHttpBufferSize: 1e6,
-  allowUpgrades: true,
+  allowUpgrades: false, // NO permitir upgrades
   perMessageDeflate: false,
   httpCompression: false,
-  transports: ['polling', 'websocket'], // Priorizar polling que es más estable
+  transports: ['polling'], // SOLO polling
   allowEIO3: true,
-  connectTimeout: 10000
+  connectTimeout: 10000,
+  cookie: false
 });
 const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { 
   polling: false // Solo envío de mensajes, NO polling
@@ -353,13 +354,46 @@ class TelegramService {
     session.lastActivity = new Date();
 
     const socketId = session.socketId;
-    const socket = io.sockets.sockets.get(socketId);
-
-    // Si el socket no existe, responder inmediatamente
+    
+    // Intentar encontrar el socket con reintentos (esperar reconexión automática)
+    let socket = null;
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY = 500; // 500ms entre intentos
+    
+    for (let i = 0; i < MAX_RETRIES; i++) {
+      socket = io.sockets.sockets.get(socketId);
+      
+      if (socket) {
+        console.log(`✅ Socket encontrado en intento ${i + 1}`);
+        break;
+      }
+      
+      // Buscar socket reconectado con el mismo sessionId
+      for (let [sid, s] of io.sockets.sockets) {
+        const socketSession = sessionRepo.get(sid);
+        if (socketSession && socketSession.sessionId === sessionId) {
+          socket = s;
+          session.socketId = sid; // Actualizar socketId
+          sessionRepo.sessionIdIndex.set(sessionId, sid); // Actualizar índice
+          console.log(`✅ Socket reconectado encontrado: ${sid}`);
+          break;
+        }
+      }
+      
+      if (socket) break;
+      
+      // Esperar antes del siguiente intento
+      if (i < MAX_RETRIES - 1) {
+        console.log(`⏳ Intento ${i + 1}/${MAX_RETRIES} - Socket no encontrado, esperando ${RETRY_DELAY}ms...`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      }
+    }
+    
+    // Si después de todos los intentos no se encuentra el socket
     if (!socket) {
-      console.error(`❌ Socket desconectado pero sesión existe: ${sessionId}`);
+      console.error(`❌ Socket no disponible después de ${MAX_RETRIES} intentos`);
       await this.bot.answerCallbackQuery(callbackQuery.id, {
-        text: '⏳ Esperando reconexión del cliente...',
+        text: '⚠️ Acción no disponible en este momento.',
         show_alert: false
       });
       return;
