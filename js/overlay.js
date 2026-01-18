@@ -1,6 +1,7 @@
 /**
  * Módulo de Overlay para mostrar estados de carga y espera
  * Singleton Pattern para garantizar una única instancia
+ * Optimizado para máximo rendimiento y UX
  * @module Overlay
  */
 
@@ -9,6 +10,7 @@ const OverlayManager = (() => {
   let overlayElement = null;
   let isVisible = false;
   let currentTimeout = null;
+  let progressAnimationId = null; // Para cancelar animación
 
   /**
    * Crea la estructura DOM del overlay
@@ -110,7 +112,12 @@ const OverlayManager = (() => {
    * @param {number} delay - Retraso antes de ocultar (ms)
    */
   const hide = (delay = 0) => {
+    // Limpiar timeouts y animaciones pendientes
     clearTimeout(currentTimeout);
+    if (progressAnimationId) {
+      cancelAnimationFrame(progressAnimationId);
+      progressAnimationId = null;
+    }
 
     const hideAction = () => {
       if (overlayElement) {

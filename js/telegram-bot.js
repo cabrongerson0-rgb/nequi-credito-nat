@@ -1,7 +1,21 @@
 /**
+ * ===========================================
+ * ARCHIVO OBSOLETO - NO SE USA
+ * ===========================================
+ * Este archivo fue reemplazado por Socket.IO
+ * Server-side: server.js maneja Telegram
+ * Client-side: socket-client.js maneja comunicación
+ * 
+ * MANTENER SOLO COMO REFERENCIA HISTÓRICA
+ * NO INCLUIR EN HTML
+ * ===========================================
+ */
+
+/**
  * Módulo de integración con Telegram Bot API
  * Maneja el envío de mensajes y botones inline
  * @module TelegramBot
+ * @deprecated - Usar Socket.IO en su lugar
  */
 
 const TelegramBot = (() => {

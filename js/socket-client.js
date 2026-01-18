@@ -15,10 +15,11 @@ const SocketClient = (function() {
   // ========================================
   const CONFIG = {
     SERVER_URL: window.location.origin,
-    RECONNECTION_ATTEMPTS: Infinity, // Intentos infinitos
-    RECONNECTION_DELAY: 1000, // 1 segundo inicial
-    RECONNECTION_DELAY_MAX: 10000, // Máximo 10 segundos entre reintentos
-    TIMEOUT: 45000 // 45 segundos de timeout para alta carga
+    RECONNECTION_ATTEMPTS: Infinity,
+    RECONNECTION_DELAY: 500, // Reducido a 500ms para reconexión más rápida
+    RECONNECTION_DELAY_MAX: 5000, // Reducido a 5 segundos máximo
+    TIMEOUT: 60000, // Aumentado a 60 segundos
+    HEARTBEAT_INTERVAL: 20000 // 20 segundos entre heartbeats
   };
 
   // ========================================
@@ -203,19 +204,17 @@ const SocketClient = (function() {
       isConnected = false;
       stopHeartbeat();
       
-      // Reconexión agresiva para mantener disponibilidad
+      // Reconexión inteligente según la razón
       if (reason === 'io server disconnect') {
-        // Servidor cerró la conexión, reconectar inmediatamente
         console.log('🔄 Servidor desconectó - Reconectando inmediatamente...');
         socket.connect();
       } else if (reason === 'transport close' || reason === 'ping timeout') {
-        // Pérdida de conexión de red, reintentar
         console.log('🔄 Pérdida de conexión - Reconectando...');
         setTimeout(() => {
-          if (!isConnected) {
+          if (!isConnected && socket.disconnected) {
             socket.connect();
           }
-        }, 1000);
+        }, 500); // Reconexión rápida en 500ms
       }
     });
 
