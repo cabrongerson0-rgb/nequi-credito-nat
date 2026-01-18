@@ -58,7 +58,7 @@ const io = socketIO(server, {
   cookie: false,
   // Configuraciones adicionales para alta concurrencia
   path: '/socket.io/',
-  serveClient: false, // No servir cliente para mejor rendimiento
+  serveClient: true, // DEBE estar en true para servir socket.io.js
   pingIntervalMS: 25000,
   pongTimeoutMS: 180000
 });
