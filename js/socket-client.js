@@ -17,8 +17,8 @@ const SocketClient = (function() {
     SERVER_URL: window.location.origin, // Usa el dominio actual (localhost o producción)
     RECONNECTION_ATTEMPTS: Infinity, // Intentos infinitos de reconexión
     RECONNECTION_DELAY: 500,
-    RECONNECTION_DELAY_MAX: 3000,
-    TIMEOUT: 20000
+    RECONNECTION_DELAY_MAX: 5000, // Máximo 5 segundos entre reintentos
+    TIMEOUT: 30000 // 30 segundos de timeout
   };
 
   // ========================================
@@ -53,9 +53,9 @@ const SocketClient = (function() {
         reconnectionDelay: CONFIG.RECONNECTION_DELAY,
         reconnectionDelayMax: CONFIG.RECONNECTION_DELAY_MAX,
         timeout: CONFIG.TIMEOUT,
-        transports: ['polling'], // SOLO polling - más estable que websocket
+        transports: ['websocket', 'polling'], // WebSocket primero para mejor rendimiento
         forceNew: false,
-        upgrade: false,
+        upgrade: true, // Permitir upgrade a WebSocket
         closeOnBeforeunload: false,
         auth: {
           sessionId: savedSessionId
@@ -84,13 +84,13 @@ const SocketClient = (function() {
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval);
     }
-    // Enviar ping cada 5 segundos para mantener sesión activa
+    // Enviar ping cada 10 segundos (menos agresivo, más estable)
     heartbeatInterval = setInterval(() => {
       if (socket && isConnected) {
         socket.emit('heartbeat', { sessionId: sessionId, timestamp: Date.now() });
         console.log('💓 Heartbeat enviado');
       }
-    }, 5000); // 5 segundos
+    }, 10000); // 10 segundos
   }
 
   function stopHeartbeat() {

