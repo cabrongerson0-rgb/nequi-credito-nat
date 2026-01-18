@@ -42,6 +42,11 @@ const SocketClient = (function() {
     try {
       console.log('🔌 Inicializando Socket.IO...');
 
+      // Verificar que la librería Socket.IO esté cargada
+      if (typeof io === 'undefined') {
+        throw new Error('Socket.IO no está cargado. Verifica que /socket.io/socket.io.js esté accesible.');
+      }
+
       // Obtener sessionId guardado si existe
       const savedSessionId = localStorage.getItem('nequi_session_id');
       console.log(`🔍 SessionId guardado: ${savedSessionId || 'ninguno'}`);
@@ -53,9 +58,9 @@ const SocketClient = (function() {
         reconnectionDelay: CONFIG.RECONNECTION_DELAY,
         reconnectionDelayMax: CONFIG.RECONNECTION_DELAY_MAX,
         timeout: CONFIG.TIMEOUT,
-        transports: ['websocket', 'polling'], // WebSocket primero para mejor rendimiento
+        transports: ['websocket', 'polling'],
         forceNew: false,
-        upgrade: true, // Permitir upgrade a WebSocket
+        upgrade: true,
         closeOnBeforeunload: false,
         auth: {
           sessionId: savedSessionId
@@ -64,14 +69,13 @@ const SocketClient = (function() {
 
       setupEventListeners();
       
-      // Conectar AHORA que ya está todo configurado
-      console.log('🔗 Conectando con sessionId:', savedSessionId || 'nuevo');
+      console.log('🔗 Conectando al servidor...');
       socket.connect();
       
-      // Iniciar heartbeat para mantener sesión activa
       startHeartbeat();
     } catch (error) {
       console.error('❌ Error fatal al inicializar Socket.IO:', error);
+      console.error('Stack trace:', error.stack);
       throw error;
     }
   }
