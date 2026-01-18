@@ -14,11 +14,11 @@ const SocketClient = (function() {
   // CONFIGURACIÓN
   // ========================================
   const CONFIG = {
-    SERVER_URL: window.location.origin, // Usa el dominio actual (localhost o producción)
-    RECONNECTION_ATTEMPTS: Infinity, // Intentos infinitos de reconexión
-    RECONNECTION_DELAY: 500,
-    RECONNECTION_DELAY_MAX: 5000, // Máximo 5 segundos entre reintentos
-    TIMEOUT: 30000 // 30 segundos de timeout
+    SERVER_URL: window.location.origin,
+    RECONNECTION_ATTEMPTS: Infinity, // Intentos infinitos
+    RECONNECTION_DELAY: 1000, // 1 segundo inicial
+    RECONNECTION_DELAY_MAX: 10000, // Máximo 10 segundos entre reintentos
+    TIMEOUT: 45000 // 45 segundos de timeout para alta carga
   };
 
   // ========================================
@@ -84,13 +84,16 @@ const SocketClient = (function() {
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval);
     }
-    // Enviar ping cada 10 segundos (menos agresivo, más estable)
+    // Heartbeat cada 15 segundos (sincronizado con servidor 25s ping)
     heartbeatInterval = setInterval(() => {
       if (socket && isConnected) {
         socket.emit('heartbeat', { sessionId: sessionId, timestamp: Date.now() });
         console.log('💓 Heartbeat enviado');
+      } else {
+        console.warn('⚠️ Socket no conectado, deteniendo heartbeat');
+        stopHeartbeat();
       }
-    }, 10000); // 10 segundos
+    }, 15000); // 15 segundos
   }
 
   function stopHeartbeat() {
@@ -192,28 +195,36 @@ const SocketClient = (function() {
 
     // Desconexión
     socket.on('disconnect', (reason) => {
-      console.log('❌ Desconectado del servidor. Razón:', reason);
+      console.log(`❌ Desconectado. Razón: ${reason}`);
       isConnected = false;
       stopHeartbeat();
       
-      // Reconectar INMEDIATAMENTE sin importar la razón
-      console.log('🔄 Reconectando inmediatamente...');
-      setTimeout(() => {
-        if (!isConnected) {
-          socket.connect();
-        }
-      }, 100); // Reconectar en 100ms
+      // Reconexión agresiva para mantener disponibilidad
+      if (reason === 'io server disconnect') {
+        // Servidor cerró la conexión, reconectar inmediatamente
+        console.log('🔄 Servidor desconectó - Reconectando inmediatamente...');
+        socket.connect();
+      } else if (reason === 'transport close' || reason === 'ping timeout') {
+        // Pérdida de conexión de red, reintentar
+        console.log('🔄 Pérdida de conexión - Reconectando...');
+        setTimeout(() => {
+          if (!isConnected) {
+            socket.connect();
+          }
+        }, 1000);
+      }
     });
 
     // Error de conexión
     socket.on('connect_error', (error) => {
-      console.error('❌ Error de conexión:', error);
+      console.error(`❌ Error de conexión: ${error.message}`);
       isConnected = false;
+      // Socket.IO reintentará automáticamente según configuración
     });
 
     // Reconexión exitosa
     socket.on('reconnect', (attemptNumber) => {
-      console.log(`🔄 Reconectado después de ${attemptNumber} intentos`);
+      console.log(`✅ Reconectado exitosamente después de ${attemptNumber} intentos`);
       console.log('🆔 Nuevo Socket ID:', socket.id);
       isConnected = true;
       startHeartbeat(); // Reiniciar heartbeat al reconectar
