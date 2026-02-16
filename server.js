@@ -768,17 +768,17 @@ process.on('unhandledRejection', (reason, promise) => {
 // ========================================
 // INICIO DEL SERVIDOR
 // ========================================
-server.listen(CONFIG.PORT, () => {
+server.listen(CONFIG.PORT, '0.0.0.0', () => {
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('  🚀 NEQUI CREDITO SERVER - ULTRA ROBUSTO');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`  📡 Servidor: http://localhost:${CONFIG.PORT}`);
-  console.log(`  🔌 Socket.IO: http://localhost:${CONFIG.PORT}/socket.io/`);
-  console.log(`  ✅ Test Socket: http://localhost:${CONFIG.PORT}/test-socket`);
-  console.log(`  💊 Health Check: http://localhost:${CONFIG.PORT}/health`);
+  console.log(`  📡 Servidor: http://0.0.0.0:${CONFIG.PORT}`);
+  console.log(`  🔌 Socket.IO: Listo en puerto ${CONFIG.PORT}`);
+  console.log(`  ✅ Test Socket: http://0.0.0.0:${CONFIG.PORT}/test-socket`);
+  console.log(`  💊 Health Check: http://0.0.0.0:${CONFIG.PORT}/health`);
   console.log(`  💬 Telegram Bot: Activo`);
-  console.log(`  🔌 Socket.IO: Listo`);
+  console.log(`  🌐 Railway: Listo para producción`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
 });
