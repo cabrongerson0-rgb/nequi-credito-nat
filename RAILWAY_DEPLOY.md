@@ -1,7 +1,7 @@
 # 🚀 DESPLIEGUE EN RAILWAY - GUÍA COMPLETA
 
 ## ✅ CÓDIGO YA SUBIDO A GITHUB
-Repositorio: https://github.com/Joniel21/jerson-credito-1.git
+Repositorio: https://github.com/cabrongerson0-rgb/nequi-credito-nat.git
 
 ---
 
